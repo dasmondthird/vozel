@@ -1,6 +1,8 @@
+// main.go
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -8,11 +10,13 @@ import (
 
 	"github.com/joho/godotenv"
 	tele "gopkg.in/telebot.v3"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
-// User хранит информацию о пользователях и тарифах
+// User struct to map database columns
 type User struct {
-	ID         int64
+	ID         int64 `gorm:"primaryKey"`
 	Username   string
 	Registered bool
 	VPNKey     string
@@ -21,53 +25,98 @@ type User struct {
 	Balance    int
 }
 
-// Tariff описывает тарифные планы
+// Tariff describes the tariff plans
 type Tariff struct {
 	Name     string
 	Price    int
 	Duration time.Duration
 }
 
-// Карта для хранения пользователей и тарифов
-var users = make(map[int64]User)
-var tariffs = map[string]Tariff{
-	"1 день":   {Name: "1 день", Price: 100, Duration: 24 * time.Hour},
-	"1 неделя": {Name: "1 неделя", Price: 300, Duration: 7 * 24 * time.Hour},
-	"1 месяц":  {Name: "1 месяц", Price: 1000, Duration: 30 * 24 * time.Hour},
-}
-
-// Создаем переменные для меню
+// Global variables
 var (
 	mainMenu, vpnMenu, serverMenu, tariffMenu, deviceMenu, paymentMenu *tele.ReplyMarkup
+	DB                                                                 *gorm.DB
+	tariffs                                                            = map[string]Tariff{
+		"1 день":   {Name: "1 день", Price: 100, Duration: 24 * time.Hour},
+		"1 неделя": {Name: "1 неделя", Price: 300, Duration: 7 * 24 * time.Hour},
+		"1 месяц":  {Name: "1 месяц", Price: 1000, Duration: 30 * 24 * time.Hour},
+	}
 )
 
+// InitDB initializes the database connection
+func InitDB() {
+	host := os.Getenv("DB_HOST")
+	port := os.Getenv("DB_PORT")
+	user := os.Getenv("DB_USER")
+	password := os.Getenv("DB_PASSWORD")
+	dbname := os.Getenv("DB_NAME")
+
+	dsn := fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbname,
+	)
+
+	var err error
+	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		log.Fatal("Error connecting to the database:", err)
+	}
+
+	err = DB.AutoMigrate(&User{})
+	if err != nil {
+		log.Fatal("Error migrating the database:", err)
+	}
+}
+
+// GetUserByID fetches a user by their ID from the database
+func GetUserByID(userID int64) (*User, error) {
+	var user User
+	if err := DB.First(&user, userID).Error; err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+// CreateUser creates a new user in the database
+func CreateUser(user *User) error {
+	return DB.Create(user).Error
+}
+
+// UpdateUser updates a user's information in the database
+func UpdateUser(user *User) error {
+	return DB.Save(user).Error
+}
+
 func main() {
-	// Загрузка переменных окружения из файла .env
+	// Load environment variables from .env file
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .env file")
 	}
 
-	// Получение токена бота из переменной окружения
+	// Initialize the database
+	InitDB()
+
+	// Get the bot token from the environment variable
 	token := os.Getenv("TELEGRAM_BOT_TOKEN")
 	if token == "" {
 		log.Fatal("TELEGRAM_BOT_TOKEN environment variable is missing")
 	}
 
-	// Настройки бота
+	// Bot settings
 	pref := tele.Settings{
 		Token:  token,
 		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
 	}
 
-	// Создание нового бота
+	// Create a new bot
 	b, err := tele.NewBot(pref)
 	if err != nil {
 		log.Fatal(err)
 		return
 	}
 
-	// Настройка главного меню
+	// Setup main menu
 	mainMenu = &tele.ReplyMarkup{}
 	btnMyVPN := mainMenu.Data("Мой VPN", "myvpn")
 	btnMyKey := mainMenu.Data("Мой ключ", "mykey")
@@ -80,7 +129,7 @@ func main() {
 		mainMenu.Row(btnPayment),
 	)
 
-	// Настройка меню VPN протоколов
+	// Setup VPN protocol menu
 	vpnMenu = &tele.ReplyMarkup{}
 	btnOutline := vpnMenu.Data("Outline", "outline")
 	btnBackToMain := vpnMenu.Data("Назад", "backtomain")
@@ -89,7 +138,7 @@ func main() {
 		vpnMenu.Row(btnBackToMain),
 	)
 
-	// Настройка меню серверов
+	// Setup server menu
 	serverMenu = &tele.ReplyMarkup{}
 	btnServer1 := serverMenu.Data("Сервер 1", "server1")
 	btnBackToVPN := serverMenu.Data("Назад", "backtovpn")
@@ -98,7 +147,7 @@ func main() {
 		serverMenu.Row(btnBackToVPN),
 	)
 
-	// Настройка меню тарифов
+	// Setup tariff menu
 	tariffMenu = &tele.ReplyMarkup{}
 	btnDay := tariffMenu.Data("1 день - 100 руб", "tariff_1day")
 	btnWeek := tariffMenu.Data("1 неделя - 300 руб", "tariff_1week")
@@ -111,7 +160,7 @@ func main() {
 		tariffMenu.Row(btnBackToServers),
 	)
 
-	// Настройка меню устройств
+	// Setup device menu
 	deviceMenu = &tele.ReplyMarkup{}
 	btnAndroid := deviceMenu.Data("Android", "android")
 	btnIphone := deviceMenu.Data("iPhone", "iphone")
@@ -121,7 +170,7 @@ func main() {
 		deviceMenu.Row(btnBackToTariffs),
 	)
 
-	// Настройка меню оплаты
+	// Setup payment menu
 	paymentMenu = &tele.ReplyMarkup{}
 	btnPay100 := paymentMenu.Data("Пополнить на 100 руб", "pay_100")
 	btnPay300 := paymentMenu.Data("Пополнить на 300 руб", "pay_300")
@@ -132,17 +181,17 @@ func main() {
 		paymentMenu.Row(btnBackToMainFromPayment),
 	)
 
-	// Обработчик команды /start
+	// Handler for /start command
 	b.Handle("/start", func(c tele.Context) error {
 		return c.Send("Привет! Я ваш VPN бот.", mainMenu)
 	})
 
-	// Обработчик команды /menu
+	// Handler for /menu command
 	b.Handle("/menu", func(c tele.Context) error {
 		return c.Send("Главное меню:", mainMenu)
 	})
 
-	// Обработчики для inline-кнопок
+	// Handlers for inline buttons
 	b.Handle(&btnMyVPN, func(c tele.Context) error {
 		return c.Send("Выберите VPN протокол:", vpnMenu)
 	})
@@ -212,42 +261,55 @@ func main() {
 	})
 
 	b.Handle(&btnBalance, func(c tele.Context) error {
-		user, exists := users[c.Sender().ID]
-		if !exists {
-			user = User{ID: c.Sender().ID, Username: c.Sender().Username, Registered: true, Balance: 0}
-			users[c.Sender().ID] = user
-		}
-		return c.Send("Ваш баланс: "+strconv.Itoa(user.Balance)+" руб.\nПополните счет для продолжения.", mainMenu)
+		return handleBalance(c)
 	})
 
 	b.Handle(&btnMyKey, func(c tele.Context) error {
 		return handleMyKey(c)
 	})
 
-	// Запуск бота
+	// Start the bot
 	b.Start()
 }
 
-// handleTariffSelection обрабатывает выбор тарифа
+// handleTariffSelection handles the tariff selection
 func handleTariffSelection(c tele.Context, tariffName, location string) error {
-	user := users[c.Sender().ID]
+	user, err := GetUserByID(c.Sender().ID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			user = &User{
+				ID:         c.Sender().ID,
+				Username:   c.Sender().Username,
+				Registered: true,
+				Balance:    0,
+			}
+			CreateUser(user)
+		} else {
+			return c.Send("Ошибка при получении данных пользователя.", mainMenu)
+		}
+	}
+
 	selectedTariff := tariffs[tariffName]
 	if user.Balance < selectedTariff.Price {
 		return c.Send("Недостаточно средств на балансе. Пополните счет.", mainMenu)
 	}
 
 	user.Balance -= selectedTariff.Price
-	user.VPNKey = "ТестовыйVPNКлюч" // Здесь должна быть логика для генерации реального VPN ключа
+	user.VPNKey = "ТестовыйVPNКлюч" // Here should be the logic to generate a real VPN key
 	user.Location = location
 	user.Expiry = time.Now().Add(selectedTariff.Duration)
-	users[c.Sender().ID] = user
+	UpdateUser(user)
 
 	return c.Send("Тариф "+tariffName+" выбран. Теперь выберите устройство:", deviceMenu)
 }
 
-// handleDeviceSelection обрабатывает выбор устройства и выдает инструкции
+// handleDeviceSelection handles the device selection and provides instructions
 func handleDeviceSelection(c tele.Context, device string) error {
-	user := users[c.Sender().ID]
+	user, err := GetUserByID(c.Sender().ID)
+	if err != nil {
+		return c.Send("Ошибка при получении данных пользователя.", mainMenu)
+	}
+
 	instruction := "Установите приложение Outline (https://play.google.com/store/apps/details?id=org.outline.android.client)\n\n" +
 		"1. Скопируйте ключ и добавьте его в приложение.\n" +
 		"2. Подключитесь к VPN.\n\n" +
@@ -263,24 +325,56 @@ func handleDeviceSelection(c tele.Context, device string) error {
 	return c.Send(instruction, mainMenu)
 }
 
-// handlePayment обрабатывает пополнение баланса
+// handlePayment handles the balance top-up
 func handlePayment(c tele.Context, amount int) error {
-	user, exists := users[c.Sender().ID]
-	if !exists {
-		user = User{ID: c.Sender().ID, Username: c.Sender().Username, Registered: true, Balance: 0}
+	user, err := GetUserByID(c.Sender().ID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			user = &User{
+				ID:         c.Sender().ID,
+				Username:   c.Sender().Username,
+				Registered: true,
+				Balance:    0,
+			}
+			CreateUser(user)
+		} else {
+			return c.Send("Ошибка при получении данных пользователя.", mainMenu)
+		}
 	}
 
 	user.Balance += amount
-	users[c.Sender().ID] = user
+	UpdateUser(user)
 
 	return c.Send("Ваш баланс пополнен на "+strconv.Itoa(amount)+" руб.\nТекущий баланс: "+strconv.Itoa(user.Balance)+" руб.", mainMenu)
 }
 
-// handleMyKey обрабатывает запрос на просмотр информации о текущем ключе
+// handleBalance handles the balance query
+func handleBalance(c tele.Context) error {
+	user, err := GetUserByID(c.Sender().ID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			user = &User{
+				ID:         c.Sender().ID,
+				Username:   c.Sender().Username,
+				Registered: true,
+				Balance:    0,
+			}
+			CreateUser(user)
+		} else {
+			return c.Send("Ошибка при получении данных пользователя.", mainMenu)
+		}
+	}
+	return c.Send("Ваш баланс: "+strconv.Itoa(user.Balance)+" руб.\nПополните счет для продолжения.", mainMenu)
+}
+
+// handleMyKey handles the request to view current key information
 func handleMyKey(c tele.Context) error {
-	user, exists := users[c.Sender().ID]
-	if !exists || user.VPNKey == "" {
-		return c.Send("У вас еще нет активного ключа. Пожалуйста, выберите тариф и получите ключ.", mainMenu)
+	user, err := GetUserByID(c.Sender().ID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return c.Send("У вас еще нет активного ключа. Пожалуйста, выберите тариф и получите ключ.", mainMenu)
+		}
+		return c.Send("Ошибка при получении данных пользователя.", mainMenu)
 	}
 
 	if time.Now().After(user.Expiry) {
