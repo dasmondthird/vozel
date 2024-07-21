@@ -1,11 +1,8 @@
-// bot/handlers.go
 package bot
 
 import (
 	"strconv"
 	"time"
-
-	"vozel/database"
 
 	tele "gopkg.in/telebot.v3"
 	"gorm.io/gorm"
@@ -196,11 +193,11 @@ func (b *Bot) handleMyKey(c tele.Context) error {
 	return c.Send(info, b.Menus.MainMenu)
 }
 
-func (b *Bot) getOrCreateUser(c tele.Context, tx *gorm.DB) (*database.User, error) {
-	var user database.User
+func (b *Bot) getOrCreateUser(c tele.Context, tx *gorm.DB) (*User, error) {
+	var user User
 	if err := tx.First(&user, c.Sender().ID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			user = database.User{
+			user = User{
 				ID:           c.Sender().ID,
 				Username:     c.Sender().Username,
 				Registered:   true,

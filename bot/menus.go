@@ -1,4 +1,3 @@
-// bot/menus.go
 package bot
 
 import (
@@ -43,6 +42,8 @@ func (b *Bot) SetupMenus() {
 	b.Menus.TariffMenu = &tele.ReplyMarkup{}
 	btnBackToServers := b.Menus.TariffMenu.Data("Назад", "backtoservers")
 	b.Menus.TariffMenu.Inline(b.Menus.TariffMenu.Row(btnBackToServers))
+
+	b.AddTariffButtons()
 }
 
 func (b *Bot) AddTariffButtons() {

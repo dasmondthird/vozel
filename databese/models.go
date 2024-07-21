@@ -1,4 +1,3 @@
-// database/models.go
 package database
 
 import (

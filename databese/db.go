@@ -1,4 +1,3 @@
-// database/db.go
 package database
 
 import (
@@ -30,7 +29,7 @@ func InitDB() {
 		Logger: logger.Default.LogMode(logger.Info),
 	})
 	if err != nil {
-		log.Fatalf("Error connecting to the database: %v", err)
+		log.Fatalf("failed to connect database, got error %v", err)
 	}
 
 	err = DB.AutoMigrate(&User{}, &Tariff{})

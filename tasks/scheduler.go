@@ -1,14 +1,13 @@
-// tasks/scheduler.go
 package tasks
 
 import (
 	"log"
 	"time"
 
-	"vozel/bot"
-	"vozel/database"
+	"telegram-vpn-bot/bot"
 
 	"github.com/go-co-op/gocron"
+	tele "gopkg.in/telebot.v3"
 )
 
 type Scheduler struct {
@@ -26,7 +25,7 @@ func (s *Scheduler) Start() {
 }
 
 func (s *Scheduler) checkAndNotifyExpiry() {
-	var users []database.User
+	var users []bot.User
 	expiryThreshold := time.Now().Add(3 * 24 * time.Hour)
 	if err := s.bot.DB.Where("expiry < ?", expiryThreshold).Find(&users).Error; err != nil {
 		log.Printf("Error fetching users for expiry check: %v", err)
